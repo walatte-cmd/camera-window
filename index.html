@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>カメラ窓ブラウザ</title>
+<style>
+  :root{--bar:#1d2430;--fg:#f2f4f7;--accent:#4aa3ff;--line:#3a4556}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#fff;font-family:-apple-system,"Hiragino Sans",sans-serif}
+  #web{position:fixed;inset:0;width:100%;height:100%;border:0;background:#fff}
+  #empty{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    color:#667;font-size:15px;padding:24px;text-align:center;line-height:1.7}
+  #cam{position:fixed;z-index:5;pointer-events:none;background:#000;border:2px solid var(--accent);
+    border-radius:10px;overflow:hidden}
+  #cam video{width:100%;height:100%;object-fit:cover;display:block}
+  #bar{position:fixed;z-index:10;left:0;right:0;bottom:0;background:var(--bar);color:var(--fg);
+    padding:10px max(12px,env(safe-area-inset-left)) calc(10px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-right));
+    display:flex;flex-direction:column;gap:8px;font-size:14px}
+  #bar.closed .more{display:none}
+  .row{display:flex;gap:8px;align-items:center}
+  input[type=url]{flex:1;min-width:0;font-size:16px;padding:8px;border-radius:8px;border:1px solid var(--line);
+    background:#0f141c;color:var(--fg)}
+  input[type=range]{flex:1}
+  button,select{font-size:15px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);
+    background:#2b3546;color:var(--fg)}
+  button.main{background:var(--accent);border-color:var(--accent);color:#06121f;font-weight:700}
+  #val{width:3.5em;text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+  #msg{color:#ffb4a8;font-size:13px}
+</style>
+</head>
+<body>
+<div id="empty">下の欄にURLを入れて「開く」を押してください。<br>表示されないサイトは、埋め込みを禁止しています。</div>
+<iframe id="web" hidden></iframe>
+<div id="cam" hidden><video id="video" playsinline muted autoplay></video></div>
+
+<div id="bar">
+  <div class="row">
+    <input id="url" type="url" placeholder="https://..." value="https://ja.wikipedia.org/">
+    <button id="go">開く</button>
+    <button id="toggle" aria-label="設定を開閉">▼</button>
+  </div>
+  <div class="row more">
+    <span>透明度</span>
+    <input id="op" type="range" min="0" max="100" value="100">
+    <span id="val">100%</span>
+  </div>
+  <div class="row more">
+    <button id="start" class="main">カメラ起動</button>
+    <select id="facing" aria-label="カメラの向き">
+      <option value="environment">背面</option>
+      <option value="user">前面</option>
+    </select>
+    <select id="size" aria-label="窓の大きさ">
+      <option value="4">1/4</option>
+      <option value="6">1/6</option>
+      <option value="8">1/8</option>
+    </select>
+    <select id="pos" aria-label="窓の位置">
+      <option value="tr">右上</option>
+      <option value="tl">左上</option>
+      <option value="br">右下</option>
+      <option value="bl">左下</option>
+    </select>
+  </div>
+  <div id="msg" class="more"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const cam = $('cam'), video = $('video'), bar = $('bar');
+let stream = null;
+
+// 透明度
+function setOpacity(){ cam.style.opacity = $('op').value/100; $('val').textContent = $('op').value + '%'; }
+$('op').addEventListener('input', setOpacity);
+
+// 窓の大きさと位置（画面の面積の 1/n）
+function layout(){
+  const n = +$('size').value, W = innerWidth, H = innerHeight;
+  const s = Math.sqrt(1/n);            // 面積が1/nになる縦横の比率
+  const w = Math.round(W*s), h = Math.round(H*s);
+  cam.style.width = w+'px'; cam.style.height = h+'px';
+  const m = 8, p = $('pos').value, barH = bar.offsetHeight;
+  cam.style.top = cam.style.bottom = cam.style.left = cam.style.right = '';
+  if (p[0]==='t') cam.style.top = `calc(${m}px + env(safe-area-inset-top))`;
+  else cam.style.bottom = (barH + m) + 'px';
+  if (p[1]==='l') cam.style.left = m+'px'; else cam.style.right = m+'px';
+}
+['size','pos'].forEach(id => $(id).addEventListener('change', layout));
+addEventListener('resize', layout);
+
+// カメラ
+async function startCam(){
+  $('msg').textContent = '';
+  if (!navigator.mediaDevices?.getUserMedia){
+    $('msg').textContent = 'このページは https で開く必要があります（カメラが使えません）。'; return;
+  }
+  try{
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:$('facing').value}, audio:false});
+    video.srcObject = stream; await video.play();
+    cam.hidden = false; $('start').textContent = 'カメラ停止'; layout(); setOpacity();
+  }catch(e){
+    $('msg').textContent = 'カメラを起動できません：' + (e.name==='NotAllowedError' ? 'カメラの使用が許可されていません。' : e.message);
+  }
+}
+function stopCam(){
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null; cam.hidden = true; $('start').textContent = 'カメラ起動';
+}
+$('start').addEventListener('click', () => stream ? stopCam() : startCam());
+$('facing').addEventListener('change', () => { if (stream) startCam(); });
+
+// Webページ
+function openUrl(){
+  let u = $('url').value.trim(); if (!u) return;
+  if (!/^https?:\/\//.test(u)) u = 'https://' + u;
+  $('web').src = u; $('web').hidden = false; $('empty').hidden = true;
+  try{ localStorage.setItem('lastUrl', u); }catch(e){}
+}
+$('go').addEventListener('click', openUrl);
+$('url').addEventListener('keydown', e => { if (e.key==='Enter') openUrl(); });
+try{ const last = localStorage.getItem('lastUrl'); if (last) $('url').value = last; }catch(e){}
+
+// 設定の開閉
+$('toggle').addEventListener('click', () => {
+  bar.classList.toggle('closed');
+  $('toggle').textContent = bar.classList.contains('closed') ? '▲' : '▼';
+  layout();
+});
+layout(); setOpacity();
+</script>
+</body>
+</html>
