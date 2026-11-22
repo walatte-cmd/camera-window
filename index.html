@@ -197,6 +197,15 @@ function openUrl(){
       if (x.pathname === '/' ) x.pathname = '/webhp';
       x.searchParams.set('igu','1'); u = x.href;
     }
+    // YouTube：動画のURLを埋め込み用アドレスに変える（playsinline=1 で全画面にならずページ内で再生）
+    if (/(^|\.)(youtube\.com|youtu\.be)$/.test(x.hostname)){
+      let id = null;
+      if (x.hostname.endsWith('youtu.be')) id = x.pathname.slice(1).split('/')[0];
+      else if (x.searchParams.get('v')) id = x.searchParams.get('v');
+      else { const m = x.pathname.match(/\/(?:shorts|embed|live)\/([\w-]{6,})/); if (m) id = m[1]; }
+      if (id) u = 'https://www.youtube.com/embed/' + id + '?playsinline=1';
+      else $('msg').textContent = 'YouTubeは動画1本ずつ表示できます。動画のURL（watch?v=… や youtu.be/… や shorts/…）を貼ってください。';
+    }
     // TikTok：動画のURLを埋め込み用アドレスに変える（トップ画面は埋め込み禁止）
     if (/(^|\.)tiktok\.com$/.test(x.hostname)){
       const m = x.pathname.match(/\/video\/(\d+)/) || x.pathname.match(/\/embed\/(?:v2\/)?(\d+)/);
