@@ -27,6 +27,10 @@
   button.main{background:var(--accent);border-color:var(--accent);color:#06121f;font-weight:700}
   #val{width:3.5em;text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
   #msg{color:#ffb4a8;font-size:13px}
+  #rec.on{background:#e5484d;border-color:#e5484d;color:#fff;font-weight:700}
+  #rec:disabled{opacity:.45}
+  #time{font-variant-numeric:tabular-nums;min-width:3em}
+  #cam.recording{border-color:#e5484d;border-width:3px}
 </style>
 </head>
 <body>
@@ -62,6 +66,12 @@
       <option value="br">右下</option>
       <option value="bl">左下</option>
     </select>
+  </div>
+  <div class="row more">
+    <button id="rec" disabled>● 録画開始</button>
+    <span id="time">0:00</span>
+    <label><input id="withAudio" type="checkbox"> 音声も録る</label>
+    <button id="save" class="main" hidden>保存</button>
   </div>
   <div id="msg" class="more"></div>
 </div>
@@ -100,15 +110,75 @@ async function startCam(){
     if (stream) stream.getTracks().forEach(t => t.stop());
     stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:$('facing').value}, audio:false});
     video.srcObject = stream; await video.play();
-    cam.hidden = false; $('start').textContent = 'カメラ停止'; layout(); setOpacity();
+    cam.hidden = false; $('start').textContent = 'カメラ停止'; $('rec').disabled = false; layout(); setOpacity();
   }catch(e){
     $('msg').textContent = 'カメラを起動できません：' + (e.name==='NotAllowedError' ? 'カメラの使用が許可されていません。' : e.message);
   }
 }
 function stopCam(){
+  if (recorder && recorder.state === 'recording') recorder.stop();
   if (stream) stream.getTracks().forEach(t => t.stop());
-  stream = null; cam.hidden = true; $('start').textContent = 'カメラ起動';
+  stream = null; cam.hidden = true; $('start').textContent = 'カメラ起動'; $('rec').disabled = true;
 }
+
+// 録画（カメラ映像だけを録る。透明度は録画に影響しない）
+let recorder = null, chunks = [], micStream = null, timer = null, lastFile = null;
+function pickType(){
+  const list = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
+  return list.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+}
+async function startRec(){
+  $('msg').textContent = '';
+  if (!window.MediaRecorder){ $('msg').textContent = 'このブラウザは録画に対応していません。'; return; }
+  const tracks = [...stream.getVideoTracks()];
+  if ($('withAudio').checked){
+    try{
+      micStream = await navigator.mediaDevices.getUserMedia({audio:true});
+      tracks.push(...micStream.getAudioTracks());
+    }catch(e){ $('msg').textContent = 'マイクが使えないため、音声なしで録画します。'; }
+  }
+  const type = pickType();
+  recorder = new MediaRecorder(new MediaStream(tracks), type ? {mimeType:type} : undefined);
+  chunks = [];
+  recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  recorder.onstop = finishRec;
+  recorder.start(1000);
+  const t0 = Date.now();
+  timer = setInterval(() => {
+    const s = Math.floor((Date.now()-t0)/1000);
+    $('time').textContent = Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+  }, 500);
+  $('rec').textContent = '■ 録画停止'; $('rec').classList.add('on'); cam.classList.add('recording');
+  $('save').hidden = true; $('withAudio').disabled = true;
+}
+function finishRec(){
+  clearInterval(timer);
+  if (micStream){ micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  const type = (recorder.mimeType || 'video/mp4').split(';')[0];
+  const ext = type.includes('webm') ? 'webm' : 'mp4';
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  const name = `camera_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.${ext}`;
+  lastFile = new File(chunks, name, {type});
+  $('rec').textContent = '● 録画開始'; $('rec').classList.remove('on'); cam.classList.remove('recording');
+  $('save').hidden = false; $('withAudio').disabled = false;
+  $('msg').textContent = `録画しました（${(lastFile.size/1024/1024).toFixed(1)}MB）。「保存」を押してください。`;
+}
+$('rec').addEventListener('click', () => {
+  if (recorder && recorder.state === 'recording') recorder.stop(); else startRec();
+});
+
+// 保存：iPhoneは共有シート（「ビデオを保存」で写真アプリへ）、それ以外はダウンロード
+$('save').addEventListener('click', async () => {
+  if (!lastFile) return;
+  if (navigator.canShare && navigator.canShare({files:[lastFile]})){
+    try{ await navigator.share({files:[lastFile]}); return; }
+    catch(e){ if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(lastFile); a.download = lastFile.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+});
 $('start').addEventListener('click', () => stream ? stopCam() : startCam());
 $('facing').addEventListener('change', () => { if (stream) startCam(); });
 
