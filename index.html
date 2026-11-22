@@ -42,7 +42,7 @@
 
 <div id="bar">
   <div class="row">
-    <input id="url" type="url" placeholder="https://..." value="https://www.google.com/">
+    <input id="url" type="url" placeholder="https://..." value="https://www.tiktok.com/@ham_ai_skill/video/7691276969912241416">
     <button id="go">開く</button>
     <button id="toggle" aria-label="操作欄をしまう">▼</button>
   </div>
@@ -200,11 +200,13 @@ function openUrl(){
     // TikTok：動画のURLを埋め込み用アドレスに変える（トップ画面は埋め込み禁止）
     if (/(^|\.)tiktok\.com$/.test(x.hostname)){
       const m = x.pathname.match(/\/video\/(\d+)/) || x.pathname.match(/\/embed\/(?:v2\/)?(\d+)/);
+      const who = x.pathname.match(/^\/(?:embed\/)?(@[\w.\-]+)\/?$/);
       if (m) u = 'https://www.tiktok.com/embed/v2/' + m[1];
+      else if (who) u = 'https://www.tiktok.com/embed/' + who[1];   // その人の動画一覧
       else if (/^(vm|vt)\./.test(x.hostname))
         $('msg').textContent = 'TikTokの短いURL（vm.tiktok.com）は開けません。TikTokアプリで動画を開き、ブラウザで表示したときの長いURL（/video/番号 を含むもの）を貼ってください。';
       else
-        $('msg').textContent = 'TikTokは動画1本ずつだけ表示できます。/video/番号 を含むURLを貼ってください。';
+        $('msg').textContent = 'TikTokは「動画のURL（/video/番号）」か「その人のページのURL（/@ユーザー名）」を貼ってください。';
     }
   }catch(e){}
   $('web').src = u; $('web').hidden = false; $('empty').hidden = true;
@@ -219,7 +221,7 @@ function setBar(open){
 $('toggle').addEventListener('click', () => setBar(false));
 $('show').addEventListener('click', () => setBar(true));
 layout(); setOpacity();
-openUrl();   // 最初はGoogleを表示
+openUrl();   // 最初はTikTokの動画を表示
 </script>
 </body>
 </html>
